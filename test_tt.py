@@ -1,6 +1,8 @@
 """Tests for tt's pure logic. Run: /usr/bin/python3 -m unittest ~/.config/tt/test_tt.py"""
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 
@@ -36,6 +38,31 @@ class Parsing(unittest.TestCase):
         self.assertEqual(tt.match_title("main.py — api-gateway", repos), "/r/api-gateway")
         self.assertEqual(tt.match_title("api – handlers.py", repos), "/r/api")
         self.assertIsNone(tt.match_title("rapid.py — notes", repos))
+
+
+class ProjectName(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.top = self.dir.name
+        subprocess.run(["git", "init", "-q", self.top], check=True)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def config(self, key, value):
+        subprocess.run(["git", "-C", self.top, "config", key, value], check=True)
+
+    def test_tt_project_wins(self):
+        self.config("lanes.project", "old")
+        self.config("tt.project", "new")
+        self.assertEqual(tt.project_name(self.top), "new")
+
+    def test_falls_back_to_lanes_project(self):
+        self.config("lanes.project", "old")
+        self.assertEqual(tt.project_name(self.top), "old")
+
+    def test_neither_is_not_set_up(self):
+        self.assertEqual(tt.project_name(self.top), "")
 
 
 class Rounding(unittest.TestCase):

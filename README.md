@@ -41,10 +41,10 @@ The first time it runs, macOS asks whether `python3` may control "System Events"
 tt only tracks repos you've opted in:
 
 ```sh
-git config lanes.project my-project
+git config tt.project my-project
 ```
 
-A repo without that key stops the timer when you work in it, and shows one notification saying how to set it up. The key is called `lanes.project` for historical reasons.
+A repo without that key stops the timer when you work in it, and shows one notification saying how to set it up. tt also reads the older key `lanes.project`, so repos set up before the rename keep tracking. To move one over: `git config tt.project "$(git config lanes.project)" && git config --unset lanes.project`.
 
 ## Use
 

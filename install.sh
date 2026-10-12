@@ -95,7 +95,7 @@ cat <<EOF
 
 Done. Next:
   1. Open a new terminal.
-  2. In each repo to track:  git config lanes.project <project-name>
+  2. In each repo to track:  git config tt.project <project-name>
      Branches named 42-x or feat/42-x tag time to issue #42.
   3. macOS will ask once to let the agent control "System Events"; allow it, or the
      editor signal is off (Settings > Privacy & Security > Automation).
