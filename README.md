@@ -28,7 +28,7 @@ cd ~/tools/tempotag
 ./install.sh
 ```
 
-tt runs from wherever you put it. The installer links everything to that directory, so `git pull` there upgrades it, and moving it means running `./install.sh` again. It changes three things, and each step is skipped if already done:
+tt runs from wherever you put it. The installer links everything to that directory, so `git pull` there upgrades it. If you move it, run `./install.sh` again from the new place: it repoints the lines and the hook it added before, wherever they pointed. It changes three things, backs up each file before editing it (`*.bak-tt`), and skips any step that's already done:
 
 1. **Shell startup files:** one line that sources `tt.zsh` in `~/.zshrc`, and `tt.bash` in `~/.bash_profile` and `~/.bashrc`. It hooks each one that exists, plus your login shell's if it doesn't. macOS Terminal starts bash as a login shell, which reads `.bash_profile`; loading the hook twice is harmless.
 2. **`~/Library/LaunchAgents/local.tt.tick.plist`:** runs `tt.py tick` every minute.
@@ -69,10 +69,10 @@ tt issue        # the tags tt would use here
 ./uninstall.sh
 ```
 
-This removes the shell lines, the launchd agent and the Claude hook, and backs up each file it edits. Timewarrior's data and `~/.local/state/tt` are left alone.
+This removes the shell lines, the launchd agent and the Claude hook, wherever the checkout was when they were added, and backs up each file it edits. A shell line that sources `tt.zsh` or `tt.bash` but wasn't added by the installer is left in place, and both scripts print it for you to remove. Timewarrior's data and `~/.local/state/tt` are left alone.
 
 ## Tests
 
 ```sh
-/usr/bin/python3 -m unittest test_tt
+/usr/bin/python3 -m unittest test_tt test_install    # the installer tests use a temporary HOME
 ```

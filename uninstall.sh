@@ -2,7 +2,6 @@
 # Remove what install.sh added. Leaves Timewarrior and its data alone.
 set -eu
 
-TT_HOME=$(cd "$(dirname "$0")" && pwd -P)
 AGENT="$HOME/Library/LaunchAgents/local.tt.tick.plist"
 ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
 SETTINGS="$HOME/.claude/settings.json"
@@ -12,13 +11,17 @@ if [ -f "$AGENT" ]; then
   rm "$AGENT" && echo "launchd: removed $AGENT"
 fi
 
-for pair in "$ZSHRC:tt.zsh" "$HOME/.bash_profile:tt.bash" "$HOME/.bashrc:tt.bash"; do
-  rc=${pair%:*} hook=${pair##*:}
-  if grep -qsF "$TT_HOME/$hook" "$rc"; then
+# install.sh marks its lines, so they're found wherever the checkout was when it ran.
+MARK="# tt time tracking"
+for rc in "$ZSHRC" "$HOME/.bash_profile" "$HOME/.bashrc"; do
+  if grep -qsF "$MARK" "$rc"; then
     cp "$rc" "$rc.bak-tt"
-    grep -vF "$TT_HOME/$hook" "$rc.bak-tt" > "$rc"
+    grep -vF "$MARK" "$rc.bak-tt" > "$rc" || true
     echo "shell: removed the tt line from $rc (backup: $(basename "$rc").bak-tt)"
   fi
+  grep -sE "^[[:space:]]*(source|\\.)[[:space:]].*tt\\.(zsh|bash)" "$rc" | while IFS= read -r l; do
+    echo "shell: $rc also has a line not added by install.sh; remove it yourself:  $l"
+  done
 done
 
 if grep -qsF "tt.py beat claude" "$SETTINGS"; then
@@ -33,7 +36,9 @@ for g in groups:
 data["hooks"]["UserPromptSubmit"] = [g for g in groups if g["hooks"]]
 if not data["hooks"]["UserPromptSubmit"]:
     del data["hooks"]["UserPromptSubmit"]
-json.dump(data, open(path, "w"), indent=2)
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
 EOF
   echo "claude: removed the hook from $SETTINGS (backup: settings.json.bak-tt)"
 fi
