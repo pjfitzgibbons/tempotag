@@ -12,7 +12,12 @@
 set -eu
 
 DRY=
-[ "${1:-}" = "--dry-run" ] && DRY=1
+ADDING=adding
+case "${1:-}" in
+  "") ;;
+  --dry-run) DRY=1 ADDING="would add" ;;
+  *) printf 'usage: %s [--dry-run]\n' "$0" >&2; exit 2 ;;
+esac
 TT_HOME=$(cd "$(dirname "$0")" && pwd -P)
 STATE_DIR="$HOME/.local/state/tt"
 AGENT="$HOME/Library/LaunchAgents/local.tt.tick.plist"
@@ -32,12 +37,33 @@ say "tt from $TT_HOME"
 say "timew at $TIMEW"
 
 # ---- 1. shells: zsh and/or bash, whichever this account uses
+# The marker finds lines this installer wrote, wherever the checkout was at the time, so
+# running it again after a move replaces them. Lines without it are reported, never edited.
+MARK="# tt time tracking"
 hook_rc() {  # hook_rc SHELL-NAME RC-FILE HOOK-FILE
-  if grep -qsF "$TT_HOME/$3" "$2"; then
+  line="source \"$TT_HOME/$3\"  $MARK"
+  ours=$(grep -sF "$MARK" "$2" | grep -F "/$3\"" || true)
+  grep -sE "^[[:space:]]*(source|\\.)[[:space:]].*$3" "$2" | grep -vF "$MARK" | while IFS= read -r l; do
+    say "$1: $2 also has a line not added by install.sh; remove it yourself:  $l"
+  done
+  if [ "$ours" = "$line" ]; then
     say "$1: $2 already sources $3"
+  elif [ -n "$ours" ]; then
+    printf '%s\n' "$ours" | while IFS= read -r old; do
+      say "$1: ${DRY:+would }replace $old with $line in $2"
+    done
+    if [ -z "$DRY" ]; then
+      cp "$2" "$2.bak-tt"
+      awk -v mark="$MARK" -v hook="/$3\"" -v line="$line" '
+        index($0, mark) && index($0, hook) { if (!done) print line; done = 1; next }
+        { print }' "$2.bak-tt" > "$2"
+    fi
   else
-    say "$1: adding a line to $2"
-    [ "$DRY" ] || printf '\n%s\n' "source \"$TT_HOME/$3\"  # tt time tracking" >> "$2"
+    say "$1: $ADDING a line to $2"
+    if [ -z "$DRY" ]; then
+      [ -f "$2" ] && cp "$2" "$2.bak-tt"
+      printf '\n%s\n' "$line" >> "$2"
+    fi
   fi
 }
 LOGIN_SHELL=$(basename "${SHELL:-}")
@@ -69,24 +95,42 @@ else
   fi
 fi
 
-# ---- 3. Claude Code hook
-if [ -f "$SETTINGS" ] && grep -qsF "tt.py beat claude" "$SETTINGS"; then
-  say "claude: hook already in $SETTINGS"
-elif [ -d "$HOME/.claude" ]; then
-  say "claude: adding the UserPromptSubmit hook to $SETTINGS (backup: settings.json.bak-tt)"
-  if [ -z "$DRY" ]; then
-    [ -f "$SETTINGS" ] && cp "$SETTINGS" "$SETTINGS.bak-tt"
-    /usr/bin/python3 - "$SETTINGS" "$HOOK" <<'EOF'
-import json, os, sys
-path, command = sys.argv[1], sys.argv[2]
+# ---- 3. Claude Code hook. Any command ending "tt.py beat claude" is ours, wherever it points:
+# the first is repointed here, and any others are dropped.
+if [ -d "$HOME/.claude" ]; then
+  /usr/bin/python3 - "$SETTINGS" "$HOOK" "$DRY" <<'EOF'
+import json, os, shutil, sys
+path, command, dry = sys.argv[1], sys.argv[2], sys.argv[3]
+would = "would " if dry else ""
 data = json.load(open(path)) if os.path.exists(path) else {}
 groups = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
-groups.append({"hooks": [{"type": "command", "command": command}]})
+ours = [h for g in groups for h in g.get("hooks", [])
+        if h.get("command", "").endswith("tt.py beat claude")]
+if [h["command"] for h in ours] == [command]:
+    print("claude: hook already in %s" % path)
+    sys.exit(0)
+if ours:
+    for h in ours:
+        print("claude: %sreplace %s with %s in %s" % (would, h["command"], command, path))
+    keep, drop = ours[0], [id(h) for h in ours[1:]]
+    keep["command"] = command
+    for g in groups:
+        g["hooks"] = [h for h in g.get("hooks", []) if id(h) not in drop]
+    groups[:] = [g for g in groups if g["hooks"]]
+else:
+    print("claude: %sadd the UserPromptSubmit hook to %s" % (would, path))
+    groups.append({"hooks": [{"type": "command", "command": command}]})
+if dry:
+    sys.exit(0)
+if os.path.exists(path):
+    shutil.copy2(path, path + ".bak-tt")
+    print("claude: backup in %s.bak-tt" % path)
 tmp = path + ".tmp"
-json.dump(data, open(tmp, "w"), indent=2)
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
 os.replace(tmp, path)
 EOF
-  fi
 else
   say "claude: no ~/.claude, skipping the Claude Code hook"
 fi
