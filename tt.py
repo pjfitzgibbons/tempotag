@@ -15,9 +15,9 @@ input stops the interval backdated to the last input; a gap between ticks (the M
 slept) stops it at the last tick. Activity resumes it.
 
 Each interval is tagged:  owner/repo#N   repo:owner/repo   project:NAME
-N comes from the branch name (42-x, feat/42-x); NAME from `git config lanes.project`.
-A repo without lanes.project is not set up: activity there stops the timer, and a
-notification (once per repo) says how to set it up.
+N comes from the branch name (42-x, feat/42-x); NAME from `git config tt.project`
+(or the older `lanes.project`). A repo without either is not set up: activity there
+stops the timer, and a notification (once per repo) says how to set it up.
 
 Raw intervals stay exact. Rounding happens only in `tt report`: per issue, per day,
 30-minute blocks, and a remainder of 12+ minutes counts as one more block.
@@ -242,7 +242,7 @@ class NotSetUp(Exception):
 
 def resolve(path, st):
     """Directory -> tags, or None if it isn't inside a repo with an origin remote.
-    Raises NotSetUp for a repo without lanes.project."""
+    Raises NotSetUp for a repo without tt.project."""
     if not os.path.isdir(path):
         return None
     top = run("git", "-C", path, "rev-parse", "--show-toplevel")
@@ -254,15 +254,24 @@ def resolve(path, st):
     if not slug:
         return None
     branch = run("git", "-C", top, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip() or None
-    project = run("git", "-C", top, "config", "--get", "lanes.project").stdout.strip()
+    project = project_name(top)
     st.setdefault("repos", {})[os.path.basename(top)] = top
     if not project:
         raise NotSetUp(top)
     return tags_for(slug, branch, project)
 
 
+def project_name(top):
+    """tt.project, falling back to lanes.project, the key's name before tt stood alone."""
+    for key in ("tt.project", "lanes.project"):
+        name = run("git", "-C", top, "config", "--get", key).stdout.strip()
+        if name:
+            return name
+    return ""
+
+
 def setup_hint(top):
-    return "%s isn't set up for tt: git -C %s config lanes.project NAME" % (os.path.basename(top), top)
+    return "%s isn't set up for tt: git -C %s config tt.project NAME" % (os.path.basename(top), top)
 
 
 FRONT_WINDOW = '''
