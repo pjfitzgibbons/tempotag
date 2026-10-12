@@ -1,4 +1,4 @@
-"""Tests for tt's pure logic. Run: /usr/bin/python3 -m unittest ~/.config/tt/test_tt.py"""
+"""Tests for tt's pure logic. Run from this directory: /usr/bin/python3 -m unittest test_tt"""
 import os
 import sys
 import unittest

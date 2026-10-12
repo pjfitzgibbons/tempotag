@@ -1,6 +1,6 @@
-# tt
+# tempotag
 
-Automatic per-issue time tracking on macOS, on top of [Timewarrior](https://timewarrior.net). You don't start or stop timers. tt watches where you're working and whether you're at the keyboard, and keeps Timewarrior's open interval tagged with the GitHub issue you're on.
+Automatic per-issue time tracking on macOS, on top of [Timewarrior](https://timewarrior.net). You don't start or stop timers. tempotag watches where you're working and whether you're at the keyboard, and keeps Timewarrior's open interval tagged with the GitHub issue you're on.
 
 ## How it decides
 
@@ -11,7 +11,7 @@ Automatic per-issue time tracking on macOS, on top of [Timewarrior](https://time
 - **Whether:** keyboard and mouse idle time. Ten minutes idle stops the interval, backdated to your last input. If the Mac sleeps, the interval stops at the last tick. Activity resumes it.
 - **Which issue:** the branch name. `42-fix-login` or `feat/42-fix-login` tags issue #42.
 
-Each interval is tagged `owner/repo#42`, `repo:owner/repo` and `project:NAME`.
+Its command is `tt`. Each interval is tagged `owner/repo#42`, `repo:owner/repo` and `project:NAME`.
 
 ## Requirements
 
@@ -22,8 +22,8 @@ Each interval is tagged `owner/repo#42`, `repo:owner/repo` and `project:NAME`.
 ## Install
 
 ```sh
-git clone <url> ~/tools/tt      # or unzip tt.zip anywhere you'll keep it
-cd ~/tools/tt
+git clone https://github.com/pjfitzgibbons/tempotag.git ~/tools/tempotag   # or unzip tempotag.zip anywhere
+cd ~/tools/tempotag
 ./install.sh --dry-run          # shows what it would change
 ./install.sh
 ```
