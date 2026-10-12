@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: install.sh fills in @TT_HOME@, @STATE_DIR@ and @PATH@. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -7,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>/Users/pjfitzgibbons/.config/tt/tt.py</string>
+    <string>@TT_HOME@/tt.py</string>
     <string>tick</string>
   </array>
   <key>StartInterval</key>
@@ -17,9 +18,9 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+    <string>@PATH@</string>
   </dict>
   <key>StandardErrorPath</key>
-  <string>/Users/pjfitzgibbons/.local/state/tt/tick.log</string>
+  <string>@STATE_DIR@/tick.log</string>
 </dict>
 </plist>

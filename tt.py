@@ -4,6 +4,7 @@
 Signals say *where* you are working; keyboard/mouse idle time says *whether*:
 
   zsh      every prompt writes `epoch path` to ~/.local/state/tt/beat-zsh
+  bash     the same, to ~/.local/state/tt/beat-bash
   claude   a Claude Code UserPromptSubmit hook runs `tt.py beat claude`
   editor   the frontmost VS Code / Zed / JetBrains / Xcode window title,
            matched against repos already seen through the other two signals
@@ -37,7 +38,7 @@ RESUME_WINDOW = 2 * 3600   # after a pause, a terminal/Claude signal older than 
 BLOCK = 30                 # billing block, minutes
 TRIGGER = 12               # minutes of remainder that earn another block
 EDITORS = {"Code", "Zed", "zed", "idea", "pycharm", "Xcode"}  # System Events process names
-SOURCES = ("zsh", "claude")
+SOURCES = ("zsh", "bash", "claude")
 
 STATE_DIR = os.path.expanduser("~/.local/state/tt")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
