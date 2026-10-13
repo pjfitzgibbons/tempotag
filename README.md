@@ -22,13 +22,13 @@ Its command is `tt`. Each interval is tagged `owner/repo#42`, `repo:owner/repo` 
 ## Install
 
 ```sh
-git clone https://github.com/pjfitzgibbons/tempotag.git ~/tools/tempotag   # or unzip tempotag.zip anywhere
+git clone -b main https://github.com/pjfitzgibbons/tempotag.git ~/tools/tempotag   # or unzip tempotag.zip anywhere
 cd ~/tools/tempotag
 ./install.sh --dry-run          # shows what it would change
 ./install.sh
 ```
 
-tt runs from wherever you put it. The installer links everything to that directory, so `git pull` there upgrades it. If you move it, run `./install.sh` again from the new place: it repoints the lines and the hook it added before, wherever they pointed. It changes three things, backs up each file before editing it (`*.bak-tt`), and skips any step that's already done:
+tt runs from wherever you put it. The installer links everything to that directory, so `git pull` there upgrades it. Install from `main`, which only moves at a release; see *Branches*. If you move it, run `./install.sh` again from the new place: it repoints the lines and the hook it added before, wherever they pointed. It changes three things, backs up each file before editing it (`*.bak-tt`), and skips any step that's already done:
 
 1. **Shell startup files:** one line that sources `tt.zsh` in `~/.zshrc`, and `tt.bash` in `~/.bash_profile` and `~/.bashrc`. It hooks each one that exists, plus your login shell's if it doesn't. macOS Terminal starts bash as a login shell, which reads `.bash_profile`; loading the hook twice is harmless.
 2. **`~/Library/LaunchAgents/local.tt.tick.plist`:** runs `tt.py tick` every minute.
@@ -78,6 +78,12 @@ Day files older than 7 days are deleted, so the log stays around 10 MB. It stays
 ```
 
 This removes the shell lines, the launchd agent and the Claude hook, wherever the checkout was when they were added, and backs up each file it edits. A shell line that sources `tt.zsh` or `tt.bash` but wasn't added by the installer is left in place, and both scripts print it for you to remove. Timewarrior's data and `~/.local/state/tt` are left alone.
+
+## Branches
+
+- **`main`** is released code. It moves only when a `release/*` PR merges, so the checkout tt runs from upgrades in tested groups of changes. Keep the installed checkout on `main` and upgrade it with `git pull --ff-only`. Re-run `./install.sh` when a release changes `install.sh` or `local.tt.tick.plist.in`.
+- **`develop`** is the default branch. Work branches start from it and their PRs merge into it.
+- **`release/*`** branches are cut from `develop` and open a PR into `main` for review. They are never squashed: once the PR passes, `main` is fast-forwarded to the release branch (`git push origin release/X:main`), and GitHub marks the PR merged. `main` never has a commit `develop` doesn't, so nothing merges back.
 
 ## Tests
 
