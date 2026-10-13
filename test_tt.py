@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 
@@ -228,14 +229,16 @@ class TickLog(unittest.TestCase):
         self.assertTrue(tt.fmt_tick(tick(NOW, [START], "tags changed")).startswith(" "))
         self.assertIn("start acme/api#42", tt.fmt_tick(tick(NOW, [START], "tags changed")))
 
-    def test_failed_log_write_does_not_stop_the_tick(self):
-        calls = []
+    def run_tick(self, idle=5.0, append_log=None):
+        """cmd_tick with the outside world stubbed. -> (timew calls, logged records)"""
+        calls, logged = [], []
+        seen = [{"source": "zsh", "age": 5, "path": "/r/api", "tags": TAGS, "chosen": True}]
         stubs = {
-            "idle_seconds": lambda: 5.0,
+            "idle_seconds": lambda: idle,
             "active_interval": lambda: None,
-            "current_signal": lambda st, now: ((now - 5, TAGS, False), None, []),
+            "current_signal": lambda st, now: ((now - 5, TAGS, False), None, [dict(e) for e in seen]),
             "timew": lambda *a: calls.append(a) or subprocess.CompletedProcess(a, 0, "", ""),
-            "append_log": lambda rec, now: 1 / 0,
+            "append_log": append_log or (lambda rec, now: logged.append(rec)),
         }
         saved = {k: getattr(tt, k) for k in stubs}
         for k, v in stubs.items():
@@ -250,8 +253,43 @@ class TickLog(unittest.TestCase):
         finally:
             for k, v in saved.items():
                 setattr(tt, k, v)
+        return calls, logged
+
+    def test_failed_log_write_does_not_stop_the_tick(self):
+        calls, _ = self.run_tick(append_log=lambda rec, now: 1 / 0)
         self.assertEqual(calls, [("start",) + tuple(TAGS)])
         self.assertIsNotNone(tt.load_state().get("last_tick"))
+
+    def test_idle_tick_logs_signals_but_acts_on_none(self):
+        calls, logged = self.run_tick(idle=tt.IDLE_CUTOFF + 5)
+        self.assertEqual(calls, [])
+        self.assertEqual(logged[0]["rule"], "idle")
+        self.assertEqual([e["source"] for e in logged[0]["signals"]], ["zsh"])
+        self.assertIsNone(logged[0]["chosen"])
+        self.assertNotIn("chosen", logged[0]["signals"][0])
+
+    def test_log_dir_is_private(self):
+        tt.append_log(tick(NOW), NOW)
+        self.assertEqual(os.stat(tt.log_dir()).st_mode & 0o777, 0o700)
+
+    def test_retention_counts_calendar_days_across_dst(self):
+        saved = os.environ.get("TZ")
+        os.environ["TZ"] = "America/Los_Angeles"  # clocks go forward 2026-03-08
+        time.tzset()
+        try:
+            local = lambda s: time.mktime(time.strptime(s, "%Y-%m-%d %H:%M"))
+            for day in ("2026-03-07", "2026-03-08"):
+                tt.append_log(tick(local(day + " 12:00")), local(day + " 12:00"))
+            now = local("2026-03-15 00:30")
+            tt.append_log(tick(now), now)
+            self.assertEqual([os.path.basename(p) for p in tt.log_files()],
+                             ["2026-03-15.jsonl", "2026-03-08.jsonl"])
+        finally:
+            if saved is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = saved
+            time.tzset()
 
 
 if __name__ == "__main__":

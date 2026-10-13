@@ -62,9 +62,9 @@ tt log 100 --changes   # only ticks that ran a timew command or hit an error; --
 
 ## Debugging
 
-Every tick appends one JSON line to a file for the day, `~/.local/state/tt/ticks/YYYY-MM-DD.jsonl`: the gap since the last tick, idle seconds, the open interval, each signal with the tags it resolved to, the rule in tt's decision that fired, and each timew command with its exit code and stderr. `tt log` reads it. A line marked `!` is a timew call that failed, and `tt` (status) says so when the last tick's did.
+Every tick appends one JSON line to a file for the day, `~/.local/state/tt/ticks/YYYY-MM-DD.jsonl`: the gap since the last tick, idle seconds, the open interval, each signal with the tags it resolved to, the rule in tt's decision that fired, and each timew command with its exit code and stderr. `tt log` reads it. A line marked `!` is a timew call that failed. When the last tick's timew call failed, `tt` (status) says so.
 
-Day files older than 7 days are deleted, so the log stays around 10 MB. It stays on your disk, but it does hold repo paths and the frontmost editor window's title. The launchd agent's stderr goes to `~/.local/state/tt/tick.log`.
+Day files older than 7 days are deleted, so the log stays around 10 MB. It stays on your disk, readable only by you, and holds repo paths and timew's error messages. The launchd agent's stderr goes to `~/.local/state/tt/tick.log`.
 
 ## Correcting time
 

@@ -299,7 +299,8 @@ def log_time(line):
 def append_log(rec, now):
     """Append one tick to today's day file, then delete day files older than LOG_DAYS.
     Nothing is rewritten: a whole day goes at once when its file is old enough."""
-    os.makedirs(log_dir(), exist_ok=True)
+    os.makedirs(log_dir(), mode=0o700, exist_ok=True)
+    os.chmod(log_dir(), 0o700)  # repo paths and timew stderr are nobody else's business
     line = json.dumps(rec, separators=(",", ":")) + "\n"
     with open(log_day(now), "ab+") as f:
         f.seek(0, os.SEEK_END)
@@ -308,7 +309,7 @@ def append_log(rec, now):
             if f.read(1) != b"\n":
                 line = "\n" + line
         f.write(line.encode())
-    oldest = os.path.basename(log_day(now - LOG_DAYS * 86400))
+    oldest = (datetime.fromtimestamp(now).date() - timedelta(days=LOG_DAYS)).isoformat() + ".jsonl"
     for path in log_files():
         if os.path.basename(path) < oldest:
             os.remove(path)
@@ -496,7 +497,11 @@ def cmd_tick(_args):
     now = time.time()
     idle = idle_seconds()
     active = active_interval()
-    signal, unset, seen = current_signal(st, now) if idle < IDLE_CUTOFF else (None, None, [])
+    signal, unset, seen = current_signal(st, now)
+    if idle >= IDLE_CUTOFF:  # the log still shows the signals, but an idle tick acts on none of them
+        signal = unset = None
+        for entry in seen:
+            entry.pop("chosen", None)
     if unset:
         notify_once(st, unset)
     rule, actions = decide(now, idle, st.get("last_tick"), active, signal, st.get("suspended_at"))
