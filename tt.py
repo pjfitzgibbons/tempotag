@@ -19,6 +19,9 @@ N comes from the branch name (42-x, feat/42-x); NAME from `git config tt.project
 (or the older `lanes.project`). A repo without either is not set up: activity there
 stops the timer, and a notification (once per repo) says how to set it up.
 
+Every tick appends what it saw, the rule decide() applied and timew's results to
+~/.local/state/tt/ticks/YYYY-MM-DD.jsonl (7 days kept); `tt log` prints it.
+
 Raw intervals stay exact. Rounding happens only in `tt report`: per issue, per day,
 30-minute blocks, and a remainder of 12+ minutes counts as one more block.
 """
@@ -39,6 +42,9 @@ BLOCK = 30                 # billing block, minutes
 TRIGGER = 12               # minutes of remainder that earn another block
 EDITORS = {"Code", "Zed", "zed", "idea", "pycharm", "Xcode"}  # System Events process names
 SOURCES = ("zsh", "bash", "claude")
+RULES = ("idle", "no signal", "suspended", "resume window", "not set up", "tags changed", "no change")
+LOG_DAYS = 7               # day files in ticks/ older than this are deleted
+LOG_SHOW = 30              # ticks `tt log` prints by default
 
 STATE_DIR = os.path.expanduser("~/.local/state/tt")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
@@ -84,39 +90,45 @@ def match_title(title, repos):
 
 
 def decide(now, idle, last_tick, active, signal, suspended_at):
-    """What the tick should do to Timewarrior.
+    """What the tick should do to Timewarrior, and which rule said so.
 
     active: {"start": epoch, "tags": [...]} or None
     signal: (epoch, tags, live) or None. live means observed right now (editor in focus);
             tags None means the newest activity is in a repo that isn't set up
-    Returns a list of ("stop", epoch) / ("cancel",) / ("start", tags).
+    Returns (rule, actions). actions is a list of ("stop", epoch) / ("cancel",) / ("start", tags).
+    rule is one of RULES, prefixed "slept+" when a sleep gap closed the interval first.
     """
     actions = []
 
     def close(at):
         actions.append(("stop", at) if at > active["start"] else ("cancel",))
 
-    if active and last_tick is not None and now - last_tick > SLEEP_GAP:
+    def done(rule):
+        return ("slept+" + rule if slept else rule), actions
+
+    slept = bool(active and last_tick is not None and now - last_tick > SLEEP_GAP)
+    if slept:
         close(last_tick)
         active = None
     if idle >= IDLE_CUTOFF:
         if active:
             close(now - idle)
-        return actions
+        return done("idle")
     if signal is None:
-        return actions
+        return done("no signal")
     t, tags, live = signal
     if suspended_at is not None and t <= suspended_at:
-        return actions
+        return done("suspended")
     if active is None and not live and now - t > RESUME_WINDOW:
-        return actions
+        return done("resume window")
     if tags is None:
         if active:
             close(now)
-        return actions
+        return done("not set up")
     if active is None or sorted(active["tags"]) != sorted(tags):
         actions.append(("start", tags))
-    return actions
+        return done("tags changed")
+    return done("no change")
 
 
 def classify(tags):
@@ -187,6 +199,46 @@ def render_report(rows):
     return "\n".join(lines)
 
 
+def tick_failed(rec):
+    return any(a.get("exit") for a in rec.get("actions") or [])
+
+
+def tick_changed(rec):
+    return bool(rec.get("actions")) or tick_failed(rec)
+
+
+def fmt_secs(secs):
+    secs = int(secs or 0)
+    return "%ds" % secs if secs < 60 else "%dm%02ds" % divmod(secs, 60) if secs < 3600 else "%dh%02dm" % divmod(secs // 60, 60)
+
+
+def fmt_action(a):
+    if a["action"] == "stop":
+        return "stop " + datetime.fromtimestamp(a["arg"]).strftime("%H:%M:%S")
+    if a["action"] == "start":
+        tags = a["arg"] or []
+        label = next((t for t in tags if "#" in t), None) or next((t for t in tags if t.startswith("repo:")), None)
+        return "start " + (label or " ".join(tags))
+    return a["action"]
+
+
+LOG_HEADER = "  %-14s  %7s  %-6s  %-19s  %s" % ("time", "idle", "signal", "rule", "actions")
+
+
+def fmt_tick(rec, width=100):
+    """One tick log record -> its `tt log` line. A failed timew call marks the line with !
+    and adds an indented line per failure with timew's stderr."""
+    actions = rec.get("actions") or []
+    lines = ["%s %-14s  %7s  %-6s  %-19s  %s" % (
+        "!" if tick_failed(rec) else " ",
+        datetime.fromtimestamp(rec.get("time", 0)).strftime("%m-%d %H:%M:%S"),
+        fmt_secs(rec.get("idle")), rec.get("chosen") or "-", rec.get("rule", "?"),
+        ", ".join(fmt_action(a) for a in actions) or "-")]
+    lines += ["!   timew %s exit %s: %s" % (a["action"], a["exit"], a.get("stderr") or "-")
+              for a in actions if a.get("exit")]
+    return "\n".join(l if len(l) <= width else l[:width - 1] + "…" for l in lines)
+
+
 # ---------------------------------------------------------------- effects
 
 def run(*cmd, **kw):
@@ -215,6 +267,90 @@ def save_state(st):
     with open(tmp, "w") as f:
         json.dump(st, f, indent=1)
     os.replace(tmp, STATE_FILE)
+
+
+def log_dir():
+    return os.path.join(STATE_DIR, "ticks")
+
+
+def log_day(epoch):
+    """The day file a tick at epoch goes in, by local date."""
+    return os.path.join(log_dir(), datetime.fromtimestamp(epoch).strftime("%Y-%m-%d") + ".jsonl")
+
+
+def log_files():
+    """Day files, newest first."""
+    try:
+        names = os.listdir(log_dir())
+    except FileNotFoundError:
+        return []
+    return [os.path.join(log_dir(), n) for n in sorted(names, reverse=True)
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.jsonl", n)]
+
+
+def log_time(line):
+    """A log line's epoch, or None if it doesn't parse."""
+    try:
+        return float(json.loads(line)["time"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def append_log(rec, now):
+    """Append one tick to today's day file, then delete day files older than LOG_DAYS.
+    Nothing is rewritten: a whole day goes at once when its file is old enough."""
+    os.makedirs(log_dir(), mode=0o700, exist_ok=True)
+    os.chmod(log_dir(), 0o700)  # repo paths and timew stderr are nobody else's business
+    line = json.dumps(rec, separators=(",", ":")) + "\n"
+    with open(log_day(now), "ab+") as f:
+        f.seek(0, os.SEEK_END)
+        if f.tell():  # a write cut short leaves no newline; don't glue this line onto it
+            f.seek(-1, os.SEEK_END)
+            if f.read(1) != b"\n":
+                line = "\n" + line
+        f.write(line.encode())
+    oldest = (datetime.fromtimestamp(now).date() - timedelta(days=LOG_DAYS)).isoformat() + ".jsonl"
+    for path in log_files():
+        if os.path.basename(path) < oldest:
+            os.remove(path)
+
+
+def log_lines_reversed(path, block=1 << 16):
+    """A file's lines, newest first, read from the end."""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        pos, buf = f.tell(), b""
+        while pos > 0:
+            n = min(block, pos)
+            pos -= n
+            f.seek(pos)
+            parts = (f.read(n) + buf).split(b"\n")
+            buf = parts[0]
+            for part in reversed(parts[1:]):
+                if part.strip():
+                    yield part.decode("utf-8", "replace")
+        if buf.strip():
+            yield buf.decode("utf-8", "replace")
+
+
+def read_log(n, changes_only=False):
+    """The last n parseable ticks, oldest first, as (raw line, record). Reads back a day file
+    at a time and stops once it has n. [] if there's no log."""
+    out = []
+    for path in log_files():
+        try:
+            for raw in log_lines_reversed(path):
+                if len(out) >= n:
+                    return out[::-1]
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict) and (not changes_only or tick_changed(rec)):
+                    out.append((raw, rec))
+        except FileNotFoundError:  # deleted by a tick while we read
+            continue
+    return out[:n][::-1]
 
 
 def idle_seconds():
@@ -314,23 +450,35 @@ def read_beat(source):
 
 
 def current_signal(st, now):
-    """-> (signal for decide(), top of the not-set-up repo it points at or None)"""
+    """-> (signal for decide(), top of the not-set-up repo it points at or None, seen)
+
+    seen lists every signal for the tick log, newest first: {"source", "age", "path",
+    "tags"} with tags a list, "not set up", or None (not a repo with an origin), and
+    "chosen" on the one that decide() gets. Every signal is resolved so the log shows them all.
+    """
     cands = []
     for source in SOURCES:
         b = read_beat(source)
         if b and b[1]:
-            cands.append((b[0], b[1], False))
+            cands.append((b[0], b[1], False, source))
     ed = editor_signal(st, now)
     if ed:
-        cands.append(ed)
-    for t, path, live in sorted(cands, reverse=True):
+        cands.append(ed + ("editor",))
+    signal = unset = None
+    seen = []
+    for t, path, live, source in sorted(cands, reverse=True):
+        entry = {"source": source, "age": round(now - t), "path": path}
         try:
-            tags = resolve(path, st)
+            entry["tags"] = tags = resolve(path, st)
         except NotSetUp as e:
-            return (t, None, live), e.top
-        if tags:
-            return (t, tags, live), None
-    return None, None
+            entry["tags"], tags, top = "not set up", None, e.top
+        else:
+            top = None
+        if signal is None and (tags or top):
+            signal, unset = (t, tags, live), top
+            entry["chosen"] = True
+        seen.append(entry)
+    return signal, unset, seen
 
 
 def notify_once(st, top):
@@ -349,20 +497,36 @@ def cmd_tick(_args):
     now = time.time()
     idle = idle_seconds()
     active = active_interval()
-    signal, unset = current_signal(st, now) if idle < IDLE_CUTOFF else (None, None)
+    signal, unset, seen = current_signal(st, now)
+    if idle >= IDLE_CUTOFF:  # the log still shows the signals, but an idle tick acts on none of them
+        signal = unset = None
+        for entry in seen:
+            entry.pop("chosen", None)
     if unset:
         notify_once(st, unset)
-    for action in decide(now, idle, st.get("last_tick"), active, signal, st.get("suspended_at")):
+    rule, actions = decide(now, idle, st.get("last_tick"), active, signal, st.get("suspended_at"))
+    done = []
+    for action in actions:
         if action[0] == "stop":
             r = timew("stop", local_iso(action[1]))
         elif action[0] == "cancel":
             r = timew("cancel")
         else:
             r = timew("start", *action[1])
+        done.append({"action": action[0], "arg": action[1] if len(action) > 1 else None,
+                     "exit": r.returncode, "stderr": r.stderr.strip()})
         if r.returncode != 0:
             print("tt tick: timew %s failed: %s" % (action[0], r.stderr.strip()), file=sys.stderr)
+    last_tick = st.get("last_tick")
     st["last_tick"] = now
     save_state(st)
+    try:
+        append_log({"time": round(now), "gap": None if last_tick is None else round(now - last_tick),
+                    "idle": round(idle), "active": active, "signals": seen,
+                    "chosen": next((e["source"] for e in seen if e.get("chosen")), None), "rule": rule,
+                    "actions": done}, now)
+    except Exception as e:  # the log is for debugging; it never stops a tick
+        print("tt tick: writing the tick log in %s failed: %s" % (log_dir(), e), file=sys.stderr)
 
 
 def cmd_beat(args):
@@ -406,6 +570,9 @@ def cmd_status(_args):
         print("editor    unavailable: %s" % st["editor_error"])
     else:
         print("editor    front=%s  matched=%s" % (st.get("frontmost"), st.get("editor")))
+    last_logged = read_log(1)
+    if last_logged and tick_failed(last_logged[0][1]):
+        print("log       the last tick's timew call failed: tt log --changes")
     print("repos     %s" % (", ".join(sorted(st.get("repos", {}))) or "-"))
     try:
         resolve(os.getcwd(), {})
@@ -434,12 +601,37 @@ def cmd_report(args):
     print(render_report(rows) if rows else "no tracked time in that range")
 
 
+def cmd_log(args):
+    """log [N] [--json] [--changes]"""
+    n, as_json, changes = LOG_SHOW, False, False
+    for a in args:
+        if a == "--json":
+            as_json = True
+        elif a == "--changes":
+            changes = True
+        elif a.isdigit() and int(a) > 0:
+            n = int(a)
+        else:
+            print("usage: tt log [N] [--json] [--changes]", file=sys.stderr)
+            sys.exit(2)
+    ticks = read_log(n, changes)
+    if not ticks:
+        print("no ticks logged yet" if not read_log(1) else "no ticks with an action or error in the log")
+        return
+    if as_json:
+        print("\n".join(raw for raw, _ in ticks))
+        return
+    print(LOG_HEADER)
+    for _, rec in ticks:
+        print(fmt_tick(rec))
+
+
 COMMANDS = {"tick": cmd_tick, "beat": cmd_beat, "stop": cmd_stop, "status": cmd_status,
-            "issue": cmd_issue, "report": cmd_report}
+            "issue": cmd_issue, "report": cmd_report, "log": cmd_log}
 
 if __name__ == "__main__":
     name = sys.argv[1] if len(sys.argv) > 1 else "status"
     if name not in COMMANDS:
-        print("usage: tt [status|stop|report [range]|issue]", file=sys.stderr)
+        print("usage: tt [status|stop|report [range]|issue|log [N] [--json] [--changes]]", file=sys.stderr)
         sys.exit(2)
     COMMANDS[name](sys.argv[2:])

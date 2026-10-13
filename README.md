@@ -54,9 +54,17 @@ tt stop         # pause until your next command, Claude prompt or editor switch
 tt report       # this week, per issue per day, in 30-minute blocks (12+ min remainder rounds up)
 tt report :month
 tt issue        # the tags tt would use here
+tt log          # the last 30 ticks: idle time, chosen signal, the rule that fired, what it did to timew
+tt log 100 --changes   # only ticks that ran a timew command or hit an error; --json prints the raw lines
 ```
 
 `tt report` rounds into billing blocks. The raw intervals in Timewarrior stay exact (`timew summary :ids`).
+
+## Debugging
+
+Every tick appends one JSON line to a file for the day, `~/.local/state/tt/ticks/YYYY-MM-DD.jsonl`: the gap since the last tick, idle seconds, the open interval, each signal with the tags it resolved to, the rule in tt's decision that fired, and each timew command with its exit code and stderr. `tt log` reads it. A line marked `!` is a timew call that failed. When the last tick's timew call failed, `tt` (status) says so.
+
+Day files older than 7 days are deleted, so the log stays around 10 MB. It stays on your disk, readable only by you, and holds repo paths and timew's error messages. The launchd agent's stderr goes to `~/.local/state/tt/tick.log`.
 
 ## Correcting time
 

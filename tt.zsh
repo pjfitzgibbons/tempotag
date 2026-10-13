@@ -2,7 +2,7 @@
 #
 # Sourced from ~/.zshrc by install.sh. It does two things:
 #   1. every prompt records "epoch cwd" as the zsh activity signal (no process spawned)
-#   2. `tt` runs tt.py:  tt [status] | tt stop | tt report [range] | tt issue
+#   2. `tt` runs tt.py:  tt [status] | tt stop | tt report [range] | tt issue | tt log
 
 typeset -g _TT_HOME=${0:A:h}
 
