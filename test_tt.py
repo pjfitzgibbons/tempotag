@@ -112,6 +112,28 @@ class Decide(unittest.TestCase):
         active = {"start": NOW - 100, "tags": TAGS}
         self.assertEqual(tt.decide(NOW, 700, NOW - 60, active, None, None), ("idle", [("cancel",)]))
 
+    def test_idle_stop_in_the_starts_second_cancels(self):
+        active = {"start": NOW - 700, "tags": TAGS}
+        self.assertEqual(tt.decide(NOW, 699.5, NOW - 60, active, None, None), ("idle", [("cancel",)]))
+        self.assertEqual(tt.decide(NOW, 699.001, NOW - 60, active, None, None), ("idle", [("cancel",)]))
+
+    def test_idle_stop_a_whole_second_after_start_stops(self):
+        active = {"start": NOW - 700, "tags": TAGS}
+        self.assertEqual(tt.decide(NOW, 699, NOW - 60, active, None, None), ("idle", [("stop", NOW - 699)]))
+
+    def test_sleep_stop_in_the_starts_second_cancels(self):
+        # the 2026-10-13 07:18:52 tick: the last tick before the sleep started the interval
+        active = {"start": 1791900772.0, "tags": TAGS}
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900772.463, active, None, None),
+                         ("slept+idle", [("cancel",)]))
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900772.999, active, None, None),
+                         ("slept+idle", [("cancel",)]))
+
+    def test_sleep_stop_a_whole_second_after_start_stops(self):
+        active = {"start": 1791900772.0, "tags": TAGS}
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900773.0, active, None, None),
+                         ("slept+idle", [("stop", 1791900773.0)]))
+
     def test_no_signal(self):
         self.assertEqual(tt.decide(NOW, 5, NOW - 60, self.active, None, None), ("no signal", []))
 
