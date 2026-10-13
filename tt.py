@@ -100,8 +100,8 @@ def decide(now, idle, last_tick, active, signal, suspended_at):
     """
     actions = []
 
-    def close(at):
-        actions.append(("stop", at) if at > active["start"] else ("cancel",))
+    def close(at):  # timew gets whole seconds (local_iso), so a stop in the start's own second cancels
+        actions.append(("stop", at) if int(at) > active["start"] else ("cancel",))
 
     def done(rule):
         return ("slept+" + rule if slept else rule), actions
