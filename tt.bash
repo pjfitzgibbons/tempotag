@@ -2,7 +2,7 @@
 #
 # Sourced from ~/.bash_profile or ~/.bashrc by install.sh. It does two things:
 #   1. every prompt records "epoch cwd" as the bash activity signal (no process spawned)
-#   2. `tt` runs tt.py:  tt [status] | tt stop | tt report [range] | tt issue
+#   2. `tt` runs tt.py:  tt [status] | tt stop | tt report [range] | tt issue | tt log
 #
 # Works on macOS's bash 3.2, which has no $EPOCHSECONDS: the epoch is computed once at load and
 # advanced with $SECONDS, so the prompt hook never forks.
