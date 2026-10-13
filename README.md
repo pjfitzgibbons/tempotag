@@ -83,7 +83,7 @@ This removes the shell lines, the launchd agent and the Claude hook, wherever th
 
 - **`main`** is released code. It moves only when a `release/*` PR merges, so the checkout tt runs from upgrades in tested groups of changes. Keep the installed checkout on `main` and upgrade it with `git pull --ff-only`. Re-run `./install.sh` when a release changes `install.sh` or `local.tt.tick.plist.in`.
 - **`develop`** is the default branch. Work branches start from it and their PRs merge into it.
-- **`release/*`** branches are cut from `develop` and merged into `main` by PR, then `main` is merged back into `develop`.
+- **`release/*`** branches are cut from `develop` and open a PR into `main` for review. They are never squashed: once the PR passes, `main` is fast-forwarded to the release branch (`git push origin release/X:main`), and GitHub marks the PR merged. `main` never has a commit `develop` doesn't, so nothing merges back.
 
 ## Tests
 
