@@ -143,7 +143,8 @@ def decide(now, idle, last_tick, active, signal, suspended_at):
 
 def classify(tags):
     """-> (project, key) for a report row."""
-    issue = next((t for t in tags if re.fullmatch(r"[^:\s]+/[^\s]+#\d+", t)), None)
+    # owner/repo#ID, where ID is whatever issue_id() read: 42, or a Plan id such as tt-kovar.
+    issue = next((t for t in tags if re.fullmatch(r"[^:\s#]+/[^\s#]+#[^\s#]+", t)), None)
     repo = next((t[5:] for t in tags if t.startswith("repo:")), None)
     project = next((t[8:] for t in tags if t.startswith("project:")), "-")
     if issue:

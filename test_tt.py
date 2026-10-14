@@ -99,6 +99,12 @@ class Rounding(unittest.TestCase):
         self.assertRegex(out, r"acme/web#7\s+0h41m\s+0\.5h")
         self.assertRegex(out, r"total\s+1h35m\s+1\.5h")
 
+    def test_report_keys_plan_ids_like_issue_numbers(self):
+        plan = ["acme/api#tt-kovar", "project:acme", "repo:acme/api"]
+        self.assertEqual(tt.classify(plan), ("acme", "acme/api#tt-kovar"))
+        self.assertEqual(tt.classify(TAGS), ("acme", "acme/api#42"))
+        self.assertEqual(tt.classify(["project:acme", "repo:acme/api"]), ("acme", "acme/api (no issue)"))
+
     def test_interval_split_at_local_midnight(self):
         ivs = [{"start": utc("2026-10-06 23:50"), "end": utc("2026-10-07 00:20"), "tags": TAGS}]
         rows = tt.day_seconds(ivs, datetime.now().astimezone())
