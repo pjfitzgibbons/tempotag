@@ -14,8 +14,9 @@ to a GitHub repo and keeps Timewarrior's open interval on it. Ten minutes withou
 input stops the interval backdated to the last input; a gap between ticks (the Mac
 slept) stops it at the last tick. Activity resumes it.
 
-Each interval is tagged:  owner/repo#N   repo:owner/repo   project:NAME
-N comes from the branch name (42-x, feat/42-x); NAME from `git config tt.project`
+Each interval is tagged:  owner/repo#ID   repo:owner/repo   project:NAME
+ID comes from the branch name: 42 from 42-x or feat/42-x, tt-kovar from Plan's
+tt-kovar-x or feat/tt-kovar-x. NAME comes from `git config tt.project`
 (or the older `lanes.project`). A repo without either is not set up: activity there
 stops the timer, and a notification (once per repo) says how to set it up.
 
@@ -61,14 +62,23 @@ def repo_slug(url):
     return "%s/%s" % (parts[-2], parts[-1]) if len(parts) >= 2 else None
 
 
-def issue_number(branch):
-    m = re.match(r"\d+", branch.rsplit("/", 1)[-1])
+CVCVC = "[b-df-hj-np-tv-z][aeiou][b-df-hj-np-tv-z][aeiou][b-df-hj-np-tv-z]"
+
+
+def issue_id(branch):
+    """The issue a branch is for, after any `word/` prefix: the leading digits of N-slug,
+    or moniker-id of Plan's moniker-id-slug, where the moniker is two letters."""
+    name = branch.rsplit("/", 1)[-1]
+    m = re.match(r"\d+", name)
+    if m:
+        return m.group(0)
+    m = re.match(r"[a-z]{2}-%s(?=-|$)" % CVCVC, name)
     return m.group(0) if m else None
 
 
 def tags_for(slug, branch, project):
     tags = []
-    n = issue_number(branch) if branch else None
+    n = issue_id(branch) if branch else None
     if n:
         tags.append("%s#%s" % (slug, n))
     tags.append("repo:" + slug)
@@ -100,8 +110,8 @@ def decide(now, idle, last_tick, active, signal, suspended_at):
     """
     actions = []
 
-    def close(at):
-        actions.append(("stop", at) if at > active["start"] else ("cancel",))
+    def close(at):  # timew gets whole seconds (local_iso), so a stop in the start's own second cancels
+        actions.append(("stop", at) if int(at) > active["start"] else ("cancel",))
 
     def done(rule):
         return ("slept+" + rule if slept else rule), actions
@@ -506,6 +516,7 @@ def cmd_tick(_args):
         notify_once(st, unset)
     rule, actions = decide(now, idle, st.get("last_tick"), active, signal, st.get("suspended_at"))
     done = []
+    held = False
     for action in actions:
         if action[0] == "stop":
             r = timew("stop", local_iso(action[1]))
@@ -517,8 +528,14 @@ def cmd_tick(_args):
                      "exit": r.returncode, "stderr": r.stderr.strip()})
         if r.returncode != 0:
             print("tt tick: timew %s failed: %s" % (action[0], r.stderr.strip()), file=sys.stderr)
+            # The interval is still open: a start now would close it at now, so run nothing more,
+            # and keep last_tick so the next tick works out the same backdated stop and retries it
+            if action[0] != "start":
+                held = True
+                break
     last_tick = st.get("last_tick")
-    st["last_tick"] = now
+    if not held:
+        st["last_tick"] = now
     save_state(st)
     try:
         append_log({"time": round(now), "gap": None if last_tick is None else round(now - last_tick),

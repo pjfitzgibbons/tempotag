@@ -25,14 +25,26 @@ class Parsing(unittest.TestCase):
                     "ssh://git@github.com/acme/api.git\n"):
             self.assertEqual(tt.repo_slug(url), "acme/api")
 
-    def test_issue_number(self):
-        self.assertEqual(tt.issue_number("42-add-reindex"), "42")
-        self.assertEqual(tt.issue_number("feat/123-thing"), "123")
-        self.assertIsNone(tt.issue_number("main"))
+    def test_issue_id_number(self):
+        self.assertEqual(tt.issue_id("42-add-reindex"), "42")
+        self.assertEqual(tt.issue_id("feat/123-thing"), "123")
+        self.assertIsNone(tt.issue_id("main"))
+
+    def test_issue_id_plan(self):
+        self.assertEqual(tt.issue_id("tt-kovar-short-slug"), "tt-kovar")
+        self.assertEqual(tt.issue_id("feat/tt-kovar-short-slug"), "tt-kovar")
+        self.assertEqual(tt.issue_id("fix/tt-kovar"), "tt-kovar")
+
+    def test_issue_id_rejects_non_ids(self):
+        for branch in ("fix-login-bug", "add-tower-x", "tt-kovars-x", "tt-kovarx", "tt-akova-x",
+                       "gh-plan-belom-x", "api-kovar-x", "feat/plan-ids", "develop"):
+            self.assertIsNone(tt.issue_id(branch), branch)
 
     def test_tags_for(self):
         self.assertEqual(tt.tags_for("acme/api", "42-x", "acme"), TAGS)
         self.assertEqual(tt.tags_for("acme/web", "main", "acme"), ["project:acme", "repo:acme/web"])
+        self.assertEqual(tt.tags_for("acme/api", "feat/ap-kovar-x", "acme"),
+                         ["acme/api#ap-kovar", "project:acme", "repo:acme/api"])
 
     def test_match_title_prefers_longest_whole_word(self):
         repos = {"api": "/r/api", "api-gateway": "/r/api-gateway"}
@@ -111,6 +123,28 @@ class Decide(unittest.TestCase):
     def test_idle_since_before_start_cancels(self):
         active = {"start": NOW - 100, "tags": TAGS}
         self.assertEqual(tt.decide(NOW, 700, NOW - 60, active, None, None), ("idle", [("cancel",)]))
+
+    def test_idle_stop_in_the_starts_second_cancels(self):
+        active = {"start": NOW - 700, "tags": TAGS}
+        self.assertEqual(tt.decide(NOW, 699.5, NOW - 60, active, None, None), ("idle", [("cancel",)]))
+        self.assertEqual(tt.decide(NOW, 699.001, NOW - 60, active, None, None), ("idle", [("cancel",)]))
+
+    def test_idle_stop_a_whole_second_after_start_stops(self):
+        active = {"start": NOW - 700, "tags": TAGS}
+        self.assertEqual(tt.decide(NOW, 699, NOW - 60, active, None, None), ("idle", [("stop", NOW - 699)]))
+
+    def test_sleep_stop_in_the_starts_second_cancels(self):
+        # the 2026-10-13 07:18:52 tick: the last tick before the sleep started the interval
+        active = {"start": 1791900772.0, "tags": TAGS}
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900772.463, active, None, None),
+                         ("slept+idle", [("cancel",)]))
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900772.999, active, None, None),
+                         ("slept+idle", [("cancel",)]))
+
+    def test_sleep_stop_a_whole_second_after_start_stops(self):
+        active = {"start": 1791900772.0, "tags": TAGS}
+        self.assertEqual(tt.decide(1791901132.0, 630, 1791900773.0, active, None, None),
+                         ("slept+idle", [("stop", 1791900773.0)]))
 
     def test_no_signal(self):
         self.assertEqual(tt.decide(NOW, 5, NOW - 60, self.active, None, None), ("no signal", []))
@@ -229,17 +263,25 @@ class TickLog(unittest.TestCase):
         self.assertTrue(tt.fmt_tick(tick(NOW, [START], "tags changed")).startswith(" "))
         self.assertIn("start acme/api#42", tt.fmt_tick(tick(NOW, [START], "tags changed")))
 
-    def run_tick(self, idle=5.0, append_log=None):
-        """cmd_tick with the outside world stubbed. -> (timew calls, logged records)"""
+    def run_tick(self, idle=5.0, append_log=None, active=None, fail=(), now=None):
+        """cmd_tick with the outside world stubbed. fail names the timew commands that exit 1;
+        now, if given, is the tick's clock. -> (timew calls, logged records)"""
         calls, logged = [], []
         seen = [{"source": "zsh", "age": 5, "path": "/r/api", "tags": TAGS, "chosen": True}]
+
+        def timew(*a):
+            calls.append(a)
+            return subprocess.CompletedProcess(a, 1 if a[0] in fail else 0, "", "failed" if a[0] in fail else "")
+
         stubs = {
             "idle_seconds": lambda: idle,
-            "active_interval": lambda: None,
+            "active_interval": lambda: active,
             "current_signal": lambda st, now: ((now - 5, TAGS, False), None, [dict(e) for e in seen]),
-            "timew": lambda *a: calls.append(a) or subprocess.CompletedProcess(a, 0, "", ""),
+            "timew": timew,
             "append_log": append_log or (lambda rec, now: logged.append(rec)),
         }
+        if now is not None:
+            stubs["time"] = type("Clock", (), {"time": staticmethod(lambda: now)})
         saved = {k: getattr(tt, k) for k in stubs}
         for k, v in stubs.items():
             setattr(tt, k, v)
@@ -259,6 +301,37 @@ class TickLog(unittest.TestCase):
         calls, _ = self.run_tick(append_log=lambda rec, now: 1 / 0)
         self.assertEqual(calls, [("start",) + tuple(TAGS)])
         self.assertIsNotNone(tt.load_state().get("last_tick"))
+
+    def sleep_tick(self, fail=(), now=NOW):
+        """A tick after an hour's sleep, with OTHER's interval still open from before it."""
+        return self.run_tick(active={"start": NOW - 7200, "tags": OTHER}, fail=fail, now=now)
+
+    def test_failed_stop_runs_nothing_after_it_and_holds_last_tick(self):
+        tt.save_state({"last_tick": NOW - 3600})
+        calls, logged = self.sleep_tick(fail=("stop",))
+        self.assertEqual(calls, [("stop", tt.local_iso(NOW - 3600))])
+        self.assertEqual(tt.load_state()["last_tick"], NOW - 3600)
+        self.assertEqual(logged[0]["rule"], "slept+tags changed")
+        self.assertEqual([a["exit"] for a in logged[0]["actions"]], [1])
+
+    def test_next_tick_retries_the_stop_at_the_original_time(self):
+        tt.save_state({"last_tick": NOW - 3600})
+        self.sleep_tick(fail=("stop",))
+        calls, _ = self.sleep_tick(now=NOW + 60)
+        self.assertEqual(calls, [("stop", tt.local_iso(NOW - 3600)), ("start",) + tuple(TAGS)])
+        self.assertEqual(tt.load_state()["last_tick"], NOW + 60)
+
+    def test_failed_cancel_holds_last_tick(self):
+        tt.save_state({"last_tick": NOW - 3600})
+        calls, _ = self.run_tick(active={"start": int(NOW - 3600), "tags": OTHER}, fail=("cancel",), now=NOW)
+        self.assertEqual(calls, [("cancel",)])
+        self.assertEqual(tt.load_state()["last_tick"], NOW - 3600)
+
+    def test_failed_start_still_moves_last_tick(self):
+        tt.save_state({"last_tick": NOW - 3600})
+        calls, _ = self.sleep_tick(fail=("start",))
+        self.assertEqual(calls, [("stop", tt.local_iso(NOW - 3600)), ("start",) + tuple(TAGS)])
+        self.assertEqual(tt.load_state()["last_tick"], NOW)
 
     def test_idle_tick_logs_signals_but_acts_on_none(self):
         calls, logged = self.run_tick(idle=tt.IDLE_CUTOFF + 5)
