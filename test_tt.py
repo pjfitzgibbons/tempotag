@@ -25,14 +25,26 @@ class Parsing(unittest.TestCase):
                     "ssh://git@github.com/acme/api.git\n"):
             self.assertEqual(tt.repo_slug(url), "acme/api")
 
-    def test_issue_number(self):
-        self.assertEqual(tt.issue_number("42-add-reindex"), "42")
-        self.assertEqual(tt.issue_number("feat/123-thing"), "123")
-        self.assertIsNone(tt.issue_number("main"))
+    def test_issue_id_number(self):
+        self.assertEqual(tt.issue_id("42-add-reindex"), "42")
+        self.assertEqual(tt.issue_id("feat/123-thing"), "123")
+        self.assertIsNone(tt.issue_id("main"))
+
+    def test_issue_id_plan(self):
+        self.assertEqual(tt.issue_id("tt-kovar-short-slug"), "tt-kovar")
+        self.assertEqual(tt.issue_id("feat/tt-kovar-short-slug"), "tt-kovar")
+        self.assertEqual(tt.issue_id("fix/tt-kovar"), "tt-kovar")
+
+    def test_issue_id_rejects_non_ids(self):
+        for branch in ("fix-login-bug", "add-tower-x", "tt-kovars-x", "tt-kovarx", "tt-akova-x",
+                       "gh-plan-belom-x", "api-kovar-x", "feat/plan-ids", "develop"):
+            self.assertIsNone(tt.issue_id(branch), branch)
 
     def test_tags_for(self):
         self.assertEqual(tt.tags_for("acme/api", "42-x", "acme"), TAGS)
         self.assertEqual(tt.tags_for("acme/web", "main", "acme"), ["project:acme", "repo:acme/web"])
+        self.assertEqual(tt.tags_for("acme/api", "feat/ap-kovar-x", "acme"),
+                         ["acme/api#ap-kovar", "project:acme", "repo:acme/api"])
 
     def test_match_title_prefers_longest_whole_word(self):
         repos = {"api": "/r/api", "api-gateway": "/r/api-gateway"}

@@ -9,9 +9,9 @@ Automatic per-issue time tracking on macOS, on top of [Timewarrior](https://time
   - **Claude Code:** every prompt you send records the session's directory.
   - **Editor:** the frontmost VS Code, Zed, JetBrains or Xcode window, matched by its title against repos tt has already seen.
 - **Whether:** keyboard and mouse idle time. Ten minutes idle stops the interval, backdated to your last input. If the Mac sleeps, the interval stops at the last tick. Activity resumes it.
-- **Which issue:** the branch name. `42-fix-login` or `feat/42-fix-login` tags issue #42.
+- **Which issue:** the branch name. `42-fix-login` or `feat/42-fix-login` tags issue #42. A Plan id works the same way: `tt-kovar-fix-login` or `feat/tt-kovar-fix-login` tags `tt-kovar`. Its moniker is always two letters.
 
-Its command is `tt`. Each interval is tagged `owner/repo#42`, `repo:owner/repo` and `project:NAME`.
+Its command is `tt`. Each interval is tagged `owner/repo#42` (or `owner/repo#tt-kovar`), `repo:owner/repo` and `project:NAME`.
 
 ## Requirements
 
