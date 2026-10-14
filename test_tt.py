@@ -1,11 +1,14 @@
 """Tests for tt's pure logic. Run from this directory: /usr/bin/python3 -m unittest test_tt"""
+import io
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tt  # noqa: E402
@@ -100,6 +103,45 @@ class Rounding(unittest.TestCase):
         ivs = [{"start": utc("2026-10-06 23:50"), "end": utc("2026-10-07 00:20"), "tags": TAGS}]
         rows = tt.day_seconds(ivs, datetime.now().astimezone())
         self.assertEqual(sorted(s // 60 for s in rows.values()), [10, 20])
+
+    def test_today_reports_only_todays_share_of_an_interval_across_midnight(self):
+        midnight = datetime.combine(datetime.now().date(), datetime.min.time()).astimezone()
+        z = lambda d: d.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")  # noqa: E731
+        ivs = [{"start": z(midnight - timedelta(minutes=50)), "end": z(midnight + timedelta(minutes=20)),
+                "tags": TAGS}]
+        seen = []
+
+        def fake_timew(*args):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, 0, json.dumps(ivs), "")
+
+        orig = tt.timew
+        tt.timew = fake_timew
+        try:
+            with redirect_stdout(io.StringIO()) as out:
+                tt.cmd_today([])
+        finally:
+            tt.timew = orig
+        self.assertEqual(seen, [("export", ":today")])
+        self.assertRegex(out.getvalue(), r"acme/api#42\s+0h20m\s+0\.5h")
+        self.assertNotIn(str((midnight - timedelta(days=1)).date()), out.getvalue())
+
+
+class Version(unittest.TestCase):
+    def test_commit_date_and_branch(self):
+        self.assertEqual(tt.version_line("4092e65", "2026-10-14", "main", False),
+                         "tt 4092e65 2026-10-14 (main)")
+
+    def test_local_changes_and_detached_head(self):
+        self.assertEqual(tt.version_line("4092e65", "2026-10-14", "", True),
+                         "tt 4092e65 2026-10-14 (detached) +local changes")
+
+    def test_outside_a_checkout(self):
+        self.assertIn("version unknown", tt.version_line(None, None, None, False))
+
+    def test_this_checkout(self):
+        out = subprocess.run([sys.executable, tt.__file__, "version"], capture_output=True, text=True)
+        self.assertRegex(out.stdout, r"^tt [0-9a-f]{7,} \d{4}-\d\d-\d\d \(")
 
 
 class Decide(unittest.TestCase):

@@ -609,13 +609,43 @@ def cmd_issue(_args):
     print("\n".join(tags))
 
 
-def cmd_report(args):
+def cmd_report(args, only_day=None):
     r = timew("export", *(args or [":week"]))
     if r.returncode != 0:
         print(r.stderr.strip(), file=sys.stderr)
         sys.exit(1)
     rows = day_seconds(json.loads(r.stdout or "[]"), datetime.now().astimezone())
+    if only_day:
+        # timew exports whole intervals that overlap the range, so one running across midnight
+        # brings its share of the day before.
+        rows = {k: v for k, v in rows.items() if k[0] == only_day}
     print(render_report(rows) if rows else "no tracked time in that range")
+
+
+def cmd_today(args):
+    if args:
+        print("usage: tt today  (tt report :today)", file=sys.stderr)
+        sys.exit(2)
+    cmd_report([":today"], only_day=datetime.now().astimezone().date())
+
+
+def version_line(sha, date, branch, dirty):
+    """tt has no version number: it runs from a git checkout, so the commit is the version."""
+    if not sha:
+        return "tt (not a git checkout; version unknown)"
+    return f"tt {sha} {date} ({branch or 'detached'})" + (" +local changes" if dirty else "")
+
+
+def cmd_version(_args):
+    here = os.path.dirname(os.path.realpath(__file__))
+    head = run("git", "-C", here, "log", "-1", "--format=%h %cs")
+    if head.returncode != 0:
+        print(version_line(None, None, None, False))
+        return
+    sha, date = head.stdout.split()
+    branch = run("git", "-C", here, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    dirty = run("git", "-C", here, "status", "--porcelain", "--untracked-files=no").stdout.strip()
+    print(version_line(sha, date, branch, bool(dirty)))
 
 
 def cmd_log(args):
@@ -644,11 +674,13 @@ def cmd_log(args):
 
 
 COMMANDS = {"tick": cmd_tick, "beat": cmd_beat, "stop": cmd_stop, "status": cmd_status,
-            "issue": cmd_issue, "report": cmd_report, "log": cmd_log}
+            "issue": cmd_issue, "report": cmd_report, "today": cmd_today, "log": cmd_log,
+            "version": cmd_version}
 
 if __name__ == "__main__":
     name = sys.argv[1] if len(sys.argv) > 1 else "status"
     if name not in COMMANDS:
-        print("usage: tt [status|stop|report [range]|issue|log [N] [--json] [--changes]]", file=sys.stderr)
+        print("usage: tt [status|stop|report [range]|today|issue|log [N] [--json] [--changes]|version]",
+              file=sys.stderr)
         sys.exit(2)
     COMMANDS[name](sys.argv[2:])
