@@ -53,9 +53,11 @@ tt              # status: what's tracking, idle time, last tick, each signal
 tt stop         # pause until your next command, Claude prompt or editor switch
 tt report       # this week, per issue per day, in 30-minute blocks (12+ min remainder rounds up)
 tt report :month
+tt today        # tt report :today
 tt issue        # the tags tt would use here
 tt log          # the last 30 ticks: idle time, chosen signal, the rule that fired, what it did to timew
 tt log 100 --changes   # only ticks that ran a timew command or hit an error; --json prints the raw lines
+tt version      # the commit tt runs from, its date and branch, and whether it has local changes
 ```
 
 `tt report` rounds into billing blocks. The raw intervals in Timewarrior stay exact (`timew summary :ids`).
