@@ -506,6 +506,7 @@ def cmd_tick(_args):
         notify_once(st, unset)
     rule, actions = decide(now, idle, st.get("last_tick"), active, signal, st.get("suspended_at"))
     done = []
+    held = False
     for action in actions:
         if action[0] == "stop":
             r = timew("stop", local_iso(action[1]))
@@ -517,8 +518,14 @@ def cmd_tick(_args):
                      "exit": r.returncode, "stderr": r.stderr.strip()})
         if r.returncode != 0:
             print("tt tick: timew %s failed: %s" % (action[0], r.stderr.strip()), file=sys.stderr)
+            # The interval is still open: a start now would close it at now, so run nothing more,
+            # and keep last_tick so the next tick works out the same backdated stop and retries it
+            if action[0] != "start":
+                held = True
+                break
     last_tick = st.get("last_tick")
-    st["last_tick"] = now
+    if not held:
+        st["last_tick"] = now
     save_state(st)
     try:
         append_log({"time": round(now), "gap": None if last_tick is None else round(now - last_tick),
