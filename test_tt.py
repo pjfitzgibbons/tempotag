@@ -145,9 +145,21 @@ class Version(unittest.TestCase):
     def test_outside_a_checkout(self):
         self.assertIn("version unknown", tt.version_line(None, None, None, False))
 
-    def test_this_checkout(self):
-        out = subprocess.run([sys.executable, tt.__file__, "version"], capture_output=True, text=True)
-        self.assertRegex(out.stdout, r"^tt [0-9a-f]{7,} \d{4}-\d\d-\d\d \(")
+    def test_a_copy_then_a_checkout(self):
+        # A copy of tt.py of its own, so the result doesn't depend on where the tests run from
+        # (a git archive export is not a checkout).
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "tt.py")
+            with open(tt.__file__, encoding="utf-8") as f, open(src, "w", encoding="utf-8") as g:
+                g.write(f.read())
+            version = lambda: subprocess.run(  # noqa: E731
+                [sys.executable, src, "version"], capture_output=True, text=True).stdout
+            self.assertIn("version unknown", version())
+            git = ["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+            subprocess.run(git + ["init", "-q", "-b", "main"], check=True)
+            subprocess.run(git + ["add", "tt.py"], check=True)
+            subprocess.run(git + ["commit", "-q", "-m", "x"], check=True)
+            self.assertRegex(version(), r"^tt [0-9a-f]{7,} \d{4}-\d\d-\d\d \(main\)\n$")
 
 
 class Decide(unittest.TestCase):
