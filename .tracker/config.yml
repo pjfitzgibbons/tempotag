@@ -1,6 +1,0 @@
-points_per_week: 5
-project_start: 2026-10-12
-hours_per_point: 8
-repos:
-  tempotag: { path: ".", gh: "pjfitzgibbons/tempotag" }
-lanes: [core]
