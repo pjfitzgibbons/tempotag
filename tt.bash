@@ -8,7 +8,7 @@
 # advanced with $SECONDS, so the prompt hook never forks.
 
 [ -n "${_TT_HOME:-}" ] && return 0   # already loaded (sourced from both profile and rc)
-_TT_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+_TT_HOME=$(builtin cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)  # builtin: RVM hooks cd, which fires inherited EXIT traps
 _TT_EPOCH0=$(( $(date +%s) - SECONDS ))
 [ -d ~/.local/state/tt ] || mkdir -p ~/.local/state/tt
 
